@@ -16,7 +16,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "test": "echo \"Error: no test specified\" && exit 0",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "playwright",
@@ -25,7 +27,19 @@
     "automation"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Meta-Boltz/snap-ui.git"
+  },
+  "homepage": "https://github.com/Meta-Boltz/snap-ui#readme",
+  "bugs": {
+    "url": "https://github.com/Meta-Boltz/snap-ui/issues"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
   "dependencies": {
     "commander": "^9.4.1",
     "fs-extra": "^10.1.0",

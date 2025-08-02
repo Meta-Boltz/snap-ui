@@ -1,0 +1,28 @@
+# Source files
+src/
+tsconfig.json
+eslint.config.js
+
+# Development files
+.git/
+.github/
+.gitignore
+
+# Test files
+tests/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Development dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
