@@ -18,6 +18,7 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 0",
+    "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -41,6 +42,7 @@
     "README.md"
   ],
   "dependencies": {
+    "@playwright/test": "^1.54.2",
     "commander": "^9.4.1",
     "fs-extra": "^10.1.0",
     "inquirer": "^8.2.4",
