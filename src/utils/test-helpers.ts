@@ -73,7 +73,43 @@ export async function hideElements(page: Page, selectors: string[]): Promise<voi
   }, selectors);
 }
 
-export function runVisualTests(components: ComponentConfig[], isBaseline: boolean, globalForceHideSelectors: string[] = []) {
+export function updateVisualBaseline(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
+  components.forEach((component) => {
+    test(`${component.name} - Baseline`, async ({ page }) => {
+      // Wait for lazy components
+      await waitForLazyComponents(page);
+      
+      // Run preConditions if provided
+      if (component.preConditions) {
+        await component.preConditions();
+      }
+      
+      // Find the element
+      const element = await page.waitForSelector(component.selector, { timeout: 10000 });
+      
+      // Apply global force hide selectors
+      if (globalForceHideSelectors.length > 0) {
+        await hideElements(page, globalForceHideSelectors);
+      }
+      
+      // Apply component-specific force hide selectors
+      if (component.forceHide?.selectors) {
+        await hideElements(page, component.forceHide.selectors);
+      }
+      
+      const screenshot = await element.screenshot();
+      
+      const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}.png`);
+      
+      await fs.ensureDir(path.dirname(baselinePath));
+      
+      await fs.writeFile(baselinePath, screenshot);
+      console.log(`✅ Baseline saved: ${component.name}`);
+    });
+  });
+}
+
+export function runVisualTests(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
   components.forEach((component) => {
     test(`${component.name}`, async ({ page }) => {
       // Wait for lazy components
@@ -107,12 +143,6 @@ export function runVisualTests(components: ComponentConfig[], isBaseline: boolea
       await fs.ensureDir(path.dirname(actualPath));
       await fs.ensureDir(path.dirname(diffPath));
       
-      if (isBaseline) {
-        await fs.writeFile(baselinePath, screenshot);
-        console.log(`✅ Baseline saved: ${component.name}`);
-        return;
-      }
-      
       if (await fs.pathExists(baselinePath)) {
         const baseline = PNG.sync.read(await fs.readFile(baselinePath));
         const actual = PNG.sync.read(screenshot);
@@ -127,11 +157,14 @@ export function runVisualTests(components: ComponentConfig[], isBaseline: boolea
           await fs.writeFile(diffPath, PNG.sync.write(diff));
           throw new Error(`Visual regression detected for "${component.name}". ${numDiffPixels} pixels differ.`);
         } else {
+          // Test passed, clean up the actual screenshot
+          if (await fs.pathExists(actualPath)) {
+            await fs.remove(actualPath);
+          }
           console.log(`✅ No visual changes: ${component.name}`);
         }
       } else {
-        await fs.writeFile(baselinePath, screenshot);
-        console.log(`⚠️  No baseline found, created new baseline: ${component.name}`);
+        throw new Error(`No baseline found for "${component.name}". Please run baseline generation first.`);
       }
     });
   });

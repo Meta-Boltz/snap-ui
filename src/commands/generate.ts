@@ -34,6 +34,19 @@ export async function generate() {
         const pageListStr = `[${pageListMatch[1]}]`;
         try {
           PageList = eval(`(${pageListStr})`);
+          // Handle both 'components' and 'ComponentList' for backward compatibility
+          PageList = PageList.map((page: any) => ({
+            ...page,
+            components: page.components || page.ComponentList || []
+          }));
+          // Ensure components have group attribute
+          PageList = PageList.map((page: any) => ({
+            ...page,
+            components: (page.components || []).map((comp: any) => ({
+              ...comp,
+              group: comp.group || comp.page || page.page
+            }))
+          }));
         } catch (e) {
           console.warn('Could not parse PageList, using fallback data');
         }
@@ -64,8 +77,8 @@ export async function generate() {
           page: 'northshore-gosupreme',
           url: 'https://www.northshorecare.com/gosupreme',
           components: [
-            { name: 'hero', selector: '.hero-section' },
-            { name: 'products', selector: '.product-grid' }
+            { name: 'hero', group: 'northshore-gosupreme', selector: '.hero-section' },
+            { name: 'products', group: 'northshore-gosupreme', selector: '.product_grid' }
           ]
         }
       ];
@@ -77,7 +90,7 @@ export async function generate() {
       fs.mkdirSync(testsDir, { recursive: true });
     }
 
-    // Generate baseline test files for each page
+    // Generate both baseline and comparison test files for each page
     pagesLoop: for (const pageConfig of PageList) {
       const pageName = pageConfig.page;
       
@@ -87,8 +100,9 @@ export async function generate() {
         continue pagesLoop;
       }
       
-      const testContent = `import { test, expect } from '@playwright/test';
-import { runVisualTests } from 'snap-ui';
+      // Generate baseline test file
+      const baselineContent = `import { test, expect } from '@playwright/test';
+import { updateVisualBaseline } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${pageName}');
@@ -105,15 +119,40 @@ test.describe('${pageName} Baseline Generation', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  runVisualTests(testData, true, forceHideSelectors);
-});
-`;
+  updateVisualBaseline(testData, forceHideSelectors);
+});`;
 
-      const testFileName = `${pageName}-baseline.spec.ts`;
-      const testFilePath = path.join(testsDir, testFileName);
+      // Generate comparison test file
+      const comparisonContent = `import { test, expect } from '@playwright/test';
+import { runVisualTests } from '@meta-boltz/snap-ui';
+import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
+
+const config = PageList.find(p => p.page === '${pageName}');
+const testData = config?.components || [];
+const baseURL = config?.url;
+const forceHideSelectors = ForceHideSelectors || [];
+
+test.describe('${pageName} Visual Regression Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    if (!config || !baseURL) {
+      throw new Error('Page configuration for ${pageName} not found');
+    }
+    await page.goto(baseURL);
+    await page.waitForLoadState('networkidle');
+  });
+
+  runVisualTests(testData, forceHideSelectors);
+});`;
+
+      const baselineFileName = `${pageName}.baseline.spec.ts`;
+      const comparisonFileName = `${pageName}.spec.ts`;
+      const baselineFilePath = path.join(testsDir, baselineFileName);
+      const comparisonFilePath = path.join(testsDir, comparisonFileName);
       
-      fs.writeFileSync(testFilePath, testContent);
-      console.log(`Generated: ${testFilePath}`);
+      fs.writeFileSync(baselineFilePath, baselineContent);
+      fs.writeFileSync(comparisonFilePath, comparisonContent);
+      console.log(`Generated: ${baselineFilePath}`);
+      console.log(`Generated: ${comparisonFilePath}`);
     }
 
     console.log('All baseline test files generated successfully!');

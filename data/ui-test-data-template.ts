@@ -10,12 +10,12 @@ function generatePageTags(pageName: string): string[] {
   ];
 }
 
-function generateComponentTags(pageName: string, componentName: string): string[] {
+function generateComponentTags(groupName: string, componentName: string): string[] {
   const baseName = componentName.toLowerCase().replace(/\s+/g, '-');
   return [
     brandTag,
-    `@${pageName}`,
-    `@${pageName}-${baseName}`,
+    `@${groupName}`,
+    `@${groupName}-${baseName}`,
     `@${baseName}`,
     "@component-visual"
   ];
@@ -26,9 +26,9 @@ export const PageList = [
     page: "your-page-name",
     url: "https://your-website.com",
     tags: generatePageTags("your-page-name"),
-    ComponentList: [
+    components: [
       {
-        page: "your-page-name",
+        group: "your-page-name",
         name: "Component Name",
         id: "component-id",
         tags: generateComponentTags("your-page-name", "Component Name"),

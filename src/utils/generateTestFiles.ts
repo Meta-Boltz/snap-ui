@@ -59,11 +59,11 @@ export async function generateTestFiles() {
       const testFilePath = path.join('tests', 'ui', `${page}.spec.ts`);
       const baselineTestFilePath = path.join('tests', 'ui', `${page}-baseline.spec.ts`);
 
-      const testContent = generateTestContent(page, url, false);
-      const baselineTestContent = generateTestContent(page, url, true);
+      const testContent = generateTestContent(page, url);
+      const baselineTestContent = generateBaselineTestContent(page, url);
 
-      testFiles.push({ path: testFilePath, content: testContent });
       testFiles.push({ path: baselineTestFilePath, content: baselineTestContent });
+      testFiles.push({ path: testFilePath, content: testContent });
     }
 
     return testFiles;
@@ -75,9 +75,9 @@ export async function generateTestFiles() {
   }
 }
 
-function generateTestContent(page: string, baseURL: string, isBaseline: boolean): string {
+function generateBaselineTestContent(page: string, baseURL: string): string {
   return `import { test, expect } from '@playwright/test';
-import { runVisualTests } from 'snap-ui';
+import { updateVisualBaseline } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${page}');
@@ -85,12 +85,32 @@ const testData = config?.components || [];
 const baseURL = '${baseURL}';
 const forceHideSelectors = ForceHideSelectors || [];
 
-test.describe('${page} ${isBaseline ? 'Baseline Generation' : 'Visual Tests'}', () => {
+test.describe('${page} - Baseline Generation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(process.env.TEST_URL || baseURL);
     await page.waitForLoadState('networkidle');
   });
 
-  runVisualTests(testData, ${isBaseline}, forceHideSelectors);
+  updateVisualBaseline(testData, forceHideSelectors);
+});`;
+}
+
+function generateTestContent(page: string, baseURL: string): string {
+  return `import { test, expect } from '@playwright/test';
+import { runVisualTests } from '@meta-boltz/snap-ui';
+import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
+
+const config = PageList.find(p => p.page === '${page}');
+const testData = config?.components || [];
+const baseURL = '${baseURL}';
+const forceHideSelectors = ForceHideSelectors || [];
+
+test.describe('${page} - Visual Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(process.env.TEST_URL || baseURL);
+    await page.waitForLoadState('networkidle');
+  });
+
+  runVisualTests(testData, forceHideSelectors);
 });`;
 }

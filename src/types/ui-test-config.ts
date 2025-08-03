@@ -2,6 +2,7 @@ export interface ComponentConfig {
   name: string;
   id: string;
   selector: string;
+  group: string;
   tags?: string[];
   forceHide?: {
     type: 'display' | 'visibility';
