@@ -37,17 +37,57 @@ export async function generate() {
         fs.copyFileSync(dataPath, tempDataPath);
         
         // Compile TypeScript to JavaScript
-        execSync(`npx tsc ${tempDataPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck`, { 
-          stdio: 'pipe',
-          cwd: process.cwd()
-        });
-        
-        // Import the compiled JavaScript
-        const compiledPath = path.join(tempDir, 'ui-test-data.js');
-        const dataModule = await import(compiledPath);
-        
-        PageList = dataModule.PageList || [];
-        ForceHideSelectors = dataModule.ForceHideSelectors || [];
+        try {
+          execSync(`npx tsc ${tempDataPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck --esModuleInterop`, { 
+            stdio: 'pipe',
+            cwd: process.cwd()
+          });
+          
+          // Import the compiled JavaScript
+          const compiledPath = path.join(tempDir, 'ui-test-data.js');
+          const dataModule = await import(compiledPath);
+          
+          PageList = dataModule.PageList || [];
+          ForceHideSelectors = dataModule.ForceHideSelectors || [];
+        } catch (compileError) {
+          console.warn('TypeScript compilation failed, falling back to regex parsing...');
+          
+          // Robust fallback: parse the file content directly
+          const fileContent = fs.readFileSync(dataPath, 'utf8');
+          
+          // Extract PageList array content
+          const pageListMatch = fileContent.match(/export\s+const\s+PageList\s*=\s*(\[[\s\S]*?\]);/);
+          if (pageListMatch && pageListMatch[1]) {
+            try {
+              // Clean up the content for safer evaluation
+              let pageListContent = pageListMatch[1];
+              
+              // Handle imports and type annotations
+              pageListContent = pageListContent.replace(/\w+\s+as\s+\w+/g, '');
+              pageListContent = pageListContent.replace(/:\s*\w+(\[\])?/g, '');
+              pageListContent = pageListContent.replace(/\w+\s*:\s*[^,\]}]+/g, (match) => {
+                return match.replace(/:\s*[^,\]}]+/g, '');
+              });
+              
+              // Use Function constructor for safer evaluation
+              const PageListFunc = new Function('return ' + pageListContent);
+              PageList = PageListFunc();
+            } catch (evalError) {
+              console.warn('Failed to parse PageList:', evalError);
+            }
+          }
+          
+          // Extract ForceHideSelectors array content
+          const forceHideMatch = fileContent.match(/export\s+const\s+ForceHideSelectors\s*=\s*(\[[\s\S]*?\]);/);
+          if (forceHideMatch && forceHideMatch[1]) {
+            try {
+              const ForceHideFunc = new Function('return ' + forceHideMatch[1]);
+              ForceHideSelectors = ForceHideFunc();
+            } catch (evalError) {
+              console.warn('Failed to parse ForceHideSelectors:', evalError);
+            }
+          }
+        }
         
         // Handle both 'components' and 'ComponentList' for backward compatibility
         PageList = PageList.map((page: any) => ({
@@ -83,9 +123,34 @@ export async function generate() {
     }
     
     if (!PageList || PageList.length === 0) {
-      console.warn('No PageList data found, please check your data/ui-test-data.ts file');
-      console.warn('Expected format: export const PageList: PageConfig[] = [...]');
-      process.exit(1);
+      console.warn('No PageList data found, creating example configuration...');
+      
+      // Create a simple example configuration
+      PageList = [
+        {
+          page: 'example',
+          url: 'https://example.com',
+          components: [
+            {
+              group: 'example',
+              name: 'Header',
+              id: 'header',
+              selector: 'header',
+              tags: ['@example', '@header']
+            },
+            {
+              group: 'example',
+              name: 'Main Content',
+              id: 'main-content',
+              selector: 'main',
+              tags: ['@example', '@main']
+            }
+          ]
+        }
+      ];
+      ForceHideSelectors = [];
+      
+      console.warn('Using example configuration. Please update data/ui-test-data.ts with your actual configuration.');
     }
 
     // Create tests directory if it doesn't exist
