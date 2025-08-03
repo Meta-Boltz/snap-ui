@@ -31,7 +31,10 @@ export async function init() {
 
   const uiTestDataPath = path.join('data', 'ui-test-data.ts');
   if (!await fs.pathExists(uiTestDataPath)) {
-    await fs.copy(path.join(__dirname, '..', '..', 'data', 'ui-test-data-template.ts'), uiTestDataPath);
+    // Get the package root directory (works both in development and when installed)
+    const packageRoot = path.join(__dirname, '..', '..');
+    const templatePath = path.join(packageRoot, 'data', 'ui-test-data-template.ts');
+    await fs.copy(templatePath, uiTestDataPath);
   }
 
   console.log('snap-ui initialized successfully!');
