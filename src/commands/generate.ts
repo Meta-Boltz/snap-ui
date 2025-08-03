@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,42 +24,52 @@ export async function generate() {
     
     // Try to load the data file
     if (fs.existsSync(dataPath)) {
-      // Convert TypeScript to JavaScript
-      console.log('Converting TypeScript data to JavaScript...');
-      const tsContent = fs.readFileSync(dataPath, 'utf8');
+      console.log('Loading data from TypeScript file...');
       
-      // Extract PageList data using regex
-      const pageListMatch = tsContent.match(/export const PageList = \[(.*?)\];/s);
-      const forceHideMatch = tsContent.match(/export const ForceHideSelectors = \[(.*?)\];/s);
+      // Use a more robust approach by temporarily compiling the TypeScript file
+      const tempDir = path.join(os.tmpdir(), 'snap-ui-compile-' + Date.now());
       
-      if (pageListMatch) {
-        const pageListStr = `[${pageListMatch[1]}]`;
-        try {
-          PageList = eval(`(${pageListStr})`);
-          // Handle both 'components' and 'ComponentList' for backward compatibility
-          PageList = PageList.map((page: any) => ({
-            ...page,
-            components: page.components || page.ComponentList || []
-          }));
-          // Ensure components have group attribute
-          PageList = PageList.map((page: any) => ({
-            ...page,
-            components: (page.components || []).map((comp: any) => ({
-              ...comp,
-              group: comp.group || comp.page || page.page
-            }))
-          }));
-        } catch (e) {
-          console.warn('Could not parse PageList, using fallback data');
-        }
-      }
-      
-      if (forceHideMatch) {
-        const forceHideStr = `[${forceHideMatch[1]}]`;
-        try {
-          ForceHideSelectors = eval(`(${forceHideStr})`);
-        } catch (e) {
-          console.warn('Could not parse ForceHideSelectors, using empty array');
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+        
+        // Copy the data file to temp directory
+        const tempDataPath = path.join(tempDir, 'ui-test-data.ts');
+        fs.copyFileSync(dataPath, tempDataPath);
+        
+        // Compile TypeScript to JavaScript
+        execSync(`npx tsc ${tempDataPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck`, { 
+          stdio: 'pipe',
+          cwd: process.cwd()
+        });
+        
+        // Import the compiled JavaScript
+        const compiledPath = path.join(tempDir, 'ui-test-data.js');
+        const dataModule = await import(compiledPath);
+        
+        PageList = dataModule.PageList || [];
+        ForceHideSelectors = dataModule.ForceHideSelectors || [];
+        
+        // Handle both 'components' and 'ComponentList' for backward compatibility
+        PageList = PageList.map((page: any) => ({
+          ...page,
+          components: page.components || page.ComponentList || []
+        }));
+        
+        // Ensure components have group attribute
+        PageList = PageList.map((page: any) => ({
+          ...page,
+          components: (page.components || []).map((comp: any) => ({
+            ...comp,
+            group: comp.group || comp.page || page.page
+          }))
+        }));
+        
+      } catch (e: any) {
+         console.warn('Could not compile TypeScript, using fallback data:', e.message || e);
+      } finally {
+        // Clean up temp directory
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
         }
       }
     } else if (fs.existsSync(jsDataPath)) {

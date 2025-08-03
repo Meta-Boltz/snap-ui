@@ -1,3 +1,5 @@
+import { PageConfig } from '@meta-boltz/snap-ui';
+
 const brandTag = "@snap-ui";
 
 function generatePageTags(pageName: string): string[] {
@@ -21,7 +23,7 @@ function generateComponentTags(groupName: string, componentName: string): string
   ];
 }
 
-export const PageList = [
+export const PageList: PageConfig[] = [
   {
     page: "your-page-name",
     url: "https://your-website.com",
@@ -46,3 +48,8 @@ export const PageList = [
     ]
   }
 ];
+
+export const ForceHideSelectors = [
+  "[data-testid='should-hide-component-selector-1']",
+  "[data-testid='should-hide-component-selector-2']",
+]
