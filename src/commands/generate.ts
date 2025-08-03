@@ -83,17 +83,9 @@ export async function generate() {
     }
     
     if (!PageList || PageList.length === 0) {
-      console.warn('No PageList data found, using fallback configuration');
-      PageList = [
-        {
-          page: 'northshore-gosupreme',
-          url: 'https://www.northshorecare.com/gosupreme',
-          components: [
-            { name: 'hero', group: 'northshore-gosupreme', selector: '.hero-section' },
-            { name: 'products', group: 'northshore-gosupreme', selector: '.product_grid' }
-          ]
-        }
-      ];
+      console.warn('No PageList data found, please check your data/ui-test-data.ts file');
+      console.warn('Expected format: export const PageList: PageConfig[] = [...]');
+      process.exit(1);
     }
 
     // Create tests directory if it doesn't exist
