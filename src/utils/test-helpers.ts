@@ -15,47 +15,111 @@ interface ComponentConfig {
     excludes?: string[];
   };
   preConditions?: () => Promise<void>;
+  viewport?: {
+    width: number;
+    height: number;
+  };
 }
 
-export async function waitForLazyComponents(page: Page): Promise<void> {
-  // Wait for network to be idle
-  await page.waitForLoadState('networkidle');
+/**
+ * Comprehensive page preparation for visual testing
+ * Based on poc-pixel-match concepts for stable screenshots
+ */
+export async function prepareForVisualTesting(page: Page, selector?: string): Promise<void> {
+  console.log('⏳ Preparing page for visual testing...');
   
-  // Wait for common lazy loading indicators
-  await page.waitForSelector('[data-testid], .loaded, .ready', { state: 'attached', timeout: 10000 }).catch(() => {});
+  // Disable audio to prevent music/autoplay issues
+  await disableAudio(page);
   
-  // Additional wait for images to load
+  // Wait for page to be fully loaded
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('load');
+  
+  // Wait for network to be idle with shorter timeout
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 5000 });
+  } catch (error) {
+    console.log('⚠️ Network idle timeout - continuing anyway');
+  }
+  
+  // Scroll through entire page to trigger lazy loading
+  console.log('🔄 Scrolling through page to load all components...');
   await page.evaluate(() => {
-    return new Promise<void>((resolve) => {
-      const images = Array.from(document.images);
-      if (images.length === 0) return resolve();
-      
-      let loadedCount = 0;
-      images.forEach(img => {
-        if (img.complete) {
-          loadedCount++;
-        } else {
-          img.addEventListener('load', () => { loadedCount++; });
-        img.addEventListener('error', () => { loadedCount++; });
-        }
-      });
-      
-      if (loadedCount === images.length) {
-        resolve();
-      } else {
-        const checkInterval = setInterval(() => {
-          if (Array.from(document.images).every(img => img.complete)) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          resolve();
-        }, 5000);
-      }
-    });
+    // Scroll to top first
+    window.scrollTo(0, 0);
+    // Scroll to bottom to trigger lazy loading
+    window.scrollTo(0, document.body.scrollHeight);
+    // Brief wait for loading
+    return new Promise(resolve => setTimeout(resolve, 1000));
   });
+  
+  // Scroll back to middle for better positioning
+  await page.evaluate(() => {
+    window.scrollTo(0, document.body.scrollHeight / 2);
+  });
+  
+  // Wait for any lazy-loaded content
+  await page.waitForTimeout(1000);
+  
+  // If specific selector provided, prepare that element
+  if (selector) {
+    await prepareElementForScreenshot(page, selector);
+  }
+  
+  console.log('✅ Page prepared for visual testing');
+}
+
+/**
+ * Disable audio and autoplay elements to prevent music during tests
+ */
+async function disableAudio(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    // Disable all audio and video elements
+    const mediaElements = document.querySelectorAll('audio, video');
+    mediaElements.forEach((element: any) => {
+      element.muted = true;
+      element.pause();
+      element.autoplay = false;
+    });
+    
+    // Override play method to prevent autoplay
+    const originalPlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function() {
+      console.log('Audio/video play prevented for testing');
+      return Promise.resolve();
+    };
+  });
+}
+
+/**
+ * Enhanced element preparation for stable screenshots
+ * Ensures element is fully loaded, visible, and stable
+ */
+export async function prepareElementForScreenshot(page: Page, selector: string): Promise<void> {
+  console.log(`🎯 Preparing element for screenshot: ${selector}`);
+  
+  // Wait for element to be attached and visible
+  const locator = page.locator(selector);
+  await locator.waitFor({ state: 'attached', timeout: 15000 });
+  await locator.waitFor({ state: 'visible', timeout: 15000 });
+  
+  // Ensure element is stable (wait for animations)
+  await page.waitForTimeout(1000);
+  
+  // Scroll element into view
+  await locator.scrollIntoViewIfNeeded();
+  
+  // Final stability wait
+  await page.waitForTimeout(500);
+  
+  console.log('✅ Element ready for screenshot');
+}
+
+/**
+ * Wait for lazy components and images to load (legacy - use prepareForVisualTesting)
+ */
+export async function waitForLazyComponents(page: Page): Promise<void> {
+  await prepareForVisualTesting(page);
 }
 
 export async function hideElements(page: Page, selectors: string[]): Promise<void> {
@@ -76,16 +140,13 @@ export async function hideElements(page: Page, selectors: string[]): Promise<voi
 export function updateVisualBaseline(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
   components.forEach((component) => {
     test(`${component.name} - Baseline`, async ({ page }) => {
-      // Wait for lazy components
-      await waitForLazyComponents(page);
+      // Comprehensive page preparation
+      await prepareForVisualTesting(page, component.selector);
       
       // Run preConditions if provided
       if (component.preConditions) {
         await component.preConditions();
       }
-      
-      // Find the element
-      const element = await page.waitForSelector(component.selector, { timeout: 10000 });
       
       // Apply global force hide selectors
       if (globalForceHideSelectors.length > 0) {
@@ -97,7 +158,19 @@ export function updateVisualBaseline(components: ComponentConfig[], globalForceH
         await hideElements(page, component.forceHide.selectors);
       }
       
-      const screenshot = await element.screenshot();
+      // Set viewport if specified
+      if (component.viewport) {
+        await page.setViewportSize(component.viewport);
+      }
+      
+      // Final element preparation
+      await prepareElementForScreenshot(page, component.selector);
+      
+      // Use locator-based screenshot for precise element targeting
+      const locator = page.locator(component.selector);
+      const screenshot = await locator.screenshot({
+        omitBackground: true
+      });
       
       const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}.png`);
       
@@ -112,16 +185,13 @@ export function updateVisualBaseline(components: ComponentConfig[], globalForceH
 export function runVisualTests(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
   components.forEach((component) => {
     test(`${component.name}`, async ({ page }) => {
-      // Wait for lazy components
-      await waitForLazyComponents(page);
+      // Comprehensive page preparation
+      await prepareForVisualTesting(page, component.selector);
       
       // Run preConditions if provided
       if (component.preConditions) {
         await component.preConditions();
       }
-      
-      // Find the element
-      const element = await page.waitForSelector(component.selector, { timeout: 10000 });
       
       // Apply global force hide selectors
       if (globalForceHideSelectors.length > 0) {
@@ -133,7 +203,19 @@ export function runVisualTests(components: ComponentConfig[], globalForceHideSel
         await hideElements(page, component.forceHide.selectors);
       }
       
-      const screenshot = await element.screenshot();
+      // Set viewport if specified
+      if (component.viewport) {
+        await page.setViewportSize(component.viewport);
+      }
+      
+      // Final element preparation
+      await prepareElementForScreenshot(page, component.selector);
+      
+      // Use locator-based screenshot for precise element targeting
+      const locator = page.locator(component.selector);
+      const screenshot = await locator.screenshot({
+        omitBackground: true
+      });
       
       const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}.png`);
       const actualPath = path.join(process.cwd(), 'screenshots', 'actual', `${component.id}.png`);

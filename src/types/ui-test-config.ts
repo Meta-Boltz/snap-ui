@@ -10,6 +10,10 @@ export interface ComponentConfig {
     excludes?: string[];
   };
   preConditions?: () => Promise<void>;
+  viewport?: {
+    width: number;
+    height: number;
+  };
 }
 
 export interface PageConfig {

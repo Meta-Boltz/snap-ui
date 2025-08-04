@@ -36,56 +36,71 @@ export async function generate() {
         const tempDataPath = path.join(tempDir, 'ui-test-data.ts');
         fs.copyFileSync(dataPath, tempDataPath);
         
-        // Compile TypeScript to JavaScript
+        // Compile TypeScript to JavaScript with better configuration
         try {
-          execSync(`npx tsc ${tempDataPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck --esModuleInterop`, { 
+          // Create a temporary tsconfig for compilation
+          const tempTsConfig = path.join(tempDir, 'tsconfig.json');
+          const tsConfigContent = {
+            compilerOptions: {
+              target: 'ES2020',
+              module: 'CommonJS',
+              esModuleInterop: true,
+              skipLibCheck: true,
+              allowSyntheticDefaultImports: true,
+              resolveJsonModule: true,
+              moduleResolution: 'node',
+              strict: false,
+              noImplicitAny: false
+            },
+            include: ['ui-test-data.ts']
+          };
+          fs.writeFileSync(tempTsConfig, JSON.stringify(tsConfigContent, null, 2));
+          
+          execSync(`npx tsc --project ${tempTsConfig}`, { 
             stdio: 'pipe',
             cwd: process.cwd()
           });
           
           // Import the compiled JavaScript
           const compiledPath = path.join(tempDir, 'ui-test-data.js');
-          const dataModule = await import(compiledPath);
+          // Convert to file URL for ESM compatibility on Windows
+          const fileUrl = 'file://' + compiledPath.replace(/\\/g, '/');
+          const dataModule = await import(fileUrl);
           
           PageList = dataModule.PageList || [];
           ForceHideSelectors = dataModule.ForceHideSelectors || [];
-        } catch (compileError) {
-          console.warn('TypeScript compilation failed, falling back to regex parsing...');
           
-          // Robust fallback: parse the file content directly
+          if (PageList.length === 0) {
+            console.warn('Compiled successfully but PageList is empty');
+          }
+        } catch (compileError) {
+          console.warn('TypeScript compilation failed, attempting manual parsing...');
+          console.warn('Compilation error:', (compileError as Error).message || compileError);
+          
+          // Create a simplified version by removing TypeScript-specific syntax
           const fileContent = fs.readFileSync(dataPath, 'utf8');
           
-          // Extract PageList array content
-          const pageListMatch = fileContent.match(/export\s+const\s+PageList\s*=\s*(\[[\s\S]*?\]);/);
-          if (pageListMatch && pageListMatch[1]) {
-            try {
-              // Clean up the content for safer evaluation
-              let pageListContent = pageListMatch[1];
-              
-              // Handle imports and type annotations
-              pageListContent = pageListContent.replace(/\w+\s+as\s+\w+/g, '');
-              pageListContent = pageListContent.replace(/:\s*\w+(\[\])?/g, '');
-              pageListContent = pageListContent.replace(/\w+\s*:\s*[^,\]}]+/g, (match) => {
-                return match.replace(/:\s*[^,\]}]+/g, '');
-              });
-              
-              // Use Function constructor for safer evaluation
-              const PageListFunc = new Function('return ' + pageListContent);
-              PageList = PageListFunc();
-            } catch (evalError) {
-              console.warn('Failed to parse PageList:', evalError);
-            }
-          }
+          // Simple approach: create a basic JS file with the data
+          const simplifiedContent = fileContent
+            .replace(/:\s*\w+(\[\])?/g, '') // Remove type annotations
+            .replace(/:\s*\{[^}]*\}/g, '')
+            .replace(/:\s*\([^)]*\)\s*=>\s*[^,\]}]+/g, '')
+            .replace(/\bas\s+const/g, '')
+            .replace(/\bconst\s+\w+\s*=\s*[^;]+;/g, '')
+            .replace(/\bfunction\s+\w+\s*\([^)]*\)\s*\{[^}]*\}/g, '')
+            .replace(/\basync\s+\([^)]*\)\s*=>\s*\{[^}]*\}/g, '')
+            .replace(/\([^)]*\)\s*=>\s*[^,\]}]+/g, 'null');
           
-          // Extract ForceHideSelectors array content
-          const forceHideMatch = fileContent.match(/export\s+const\s+ForceHideSelectors\s*=\s*(\[[\s\S]*?\]);/);
-          if (forceHideMatch && forceHideMatch[1]) {
-            try {
-              const ForceHideFunc = new Function('return ' + forceHideMatch[1]);
-              ForceHideSelectors = ForceHideFunc();
-            } catch (evalError) {
-              console.warn('Failed to parse ForceHideSelectors:', evalError);
-            }
+          const simplifiedPath = path.join(tempDir, 'ui-test-data.js');
+          fs.writeFileSync(simplifiedPath, simplifiedContent);
+          
+          try {
+            const fileUrl = 'file://' + simplifiedPath.replace(/\\/g, '/');
+            const dataModule = await import(fileUrl);
+            PageList = dataModule.PageList || [];
+            ForceHideSelectors = dataModule.ForceHideSelectors || [];
+          } catch (importError) {
+            console.warn('Simplified parsing also failed:', (importError as Error).message || importError);
           }
         }
         
@@ -114,7 +129,8 @@ export async function generate() {
       }
     } else if (fs.existsSync(jsDataPath)) {
       // Use dynamic import for JS file
-      const { PageList: PL, ForceHideSelectors: FHS } = await import(path.join(cwd, 'data', 'ui-test-data.js'));
+      const jsFileUrl = 'file://' + jsDataPath.replace(/\\/g, '/');
+      const { PageList: PL, ForceHideSelectors: FHS } = await import(jsFileUrl);
       PageList = PL;
       ForceHideSelectors = FHS;
     } else {
