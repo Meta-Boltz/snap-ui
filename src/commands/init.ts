@@ -33,7 +33,7 @@ export async function init() {
   if (!await fs.pathExists(uiTestDataPath)) {
     // Get the package root directory (works both in development and when installed)
     const packageRoot = path.join(__dirname, '..', '..');
-    const templatePath = path.join(packageRoot, 'data', 'ui-test-data-template.ts');
+    const templatePath = path.join(packageRoot, 'templates', 'ui-test-data-template.ts');
     await fs.copy(templatePath, uiTestDataPath);
   }
 
