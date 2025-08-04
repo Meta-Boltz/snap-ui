@@ -50,7 +50,10 @@ export async function generate() {
               resolveJsonModule: true,
               moduleResolution: 'node',
               strict: false,
-              noImplicitAny: false
+              noImplicitAny: false,
+              paths: {
+                "@meta-boltz/snap-ui": [path.join(__dirname, '../../dist/index.js')]
+              }
             },
             include: ['ui-test-data.ts']
           };
