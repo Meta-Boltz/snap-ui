@@ -3,7 +3,7 @@ name: Publish to npm
 on:
   push:
     branches: [master]
-    paths: ['packages/snap-ui/package.json']
+    paths: ['package.json']
     tags: ['v*']
   release:
     types: [published]
@@ -24,7 +24,6 @@ jobs:
       - name: Check if version changed
         id: version-check
         run: |
-          cd packages/snap-ui
           OLD_VERSION=$(git show HEAD~1:package.json | jq -r .version)
           NEW_VERSION=$(jq -r .version package.json)
           echo "Old version: $OLD_VERSION"
@@ -45,21 +44,18 @@ jobs:
       - name: Install dependencies
         if: steps.version-check.outputs.version-changed == 'true' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         run: npm install
-        working-directory: packages/snap-ui
+
         
       - name: Run linter
         if: steps.version-check.outputs.version-changed == 'true' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         run: npm run lint --if-present
-        working-directory: packages/snap-ui
-        
+
       - name: Build package
         if: steps.version-check.outputs.version-changed == 'true' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         run: npm run build
-        working-directory: packages/snap-ui
-        
+
       - name: Publish to npm
         if: steps.version-check.outputs.version-changed == 'true' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         run: npm publish --provenance --access public
-        working-directory: packages/snap-ui
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
