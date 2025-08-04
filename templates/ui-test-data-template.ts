@@ -8,87 +8,39 @@
  * export const ForceHideSelectors: string[] = [...] (optional)
  */
 
-export interface ComponentConfig {
-  group: string;
-  name: string;
-  id: string;
-  selector: string;
-  tags?: string[];
-  waitForSelector?: string;
-  waitForTimeout?: number;
-  viewport?: {
-    width: number;
-    height: number;
-  };
-  fullPage?: boolean;
-  clip?: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-}
+import { PageConfig, generatePageTags, generateComponentTags } from "@meta-boltz/snap-ui";
 
-export interface PageConfig {
-  page: string;
-  url: string;
-  components: ComponentConfig[];
-  beforeScreenshot?: () => Promise<void>;
-  afterScreenshot?: () => Promise<void>;
-  viewport?: {
-    width: number;
-    height: number;
-  };
-  waitForSelector?: string;
-  waitForTimeout?: number;
-  fullPage?: boolean;
-}
+const brandTag = "@snap-ui";
 
 export const PageList: PageConfig[] = [
   {
-    page: 'homepage',
-    url: 'https://your-website.com',
+    page: "test-page",
+    url: "https://playwright.dev",
+    tags: generatePageTags(brandTag, "test-page"),
     components: [
       {
-        group: 'navigation',
-        name: 'Main Navigation',
-        id: 'main-nav',
-        selector: '[data-test="main-navigation"]',
-        tags: ['@navigation', '@header']
+        group: "test-page",
+        name: "Hero Section",
+        id: "hero-section",
+        tags: generateComponentTags(brandTag, "test-page", "Hero Section"),
+        selector: "h1",
+        forceHide: {
+          type: "display",
+          selectors: [".announcement-banner"],
+          excludes: []
+        },
       },
       {
-        group: 'hero',
-        name: 'Hero Section',
-        id: 'hero',
-        selector: '.hero-section',
-        tags: ['@hero', '@homepage']
-      },
-      {
-        group: 'features',
-        name: 'Feature Cards',
-        id: 'features',
-        selector: '.feature-cards',
-        tags: ['@features', '@homepage']
-      }
-    ]
-  },
-  {
-    page: 'about',
-    url: 'https://your-website.com/about',
-    components: [
-      {
-        group: 'content',
-        name: 'About Content',
-        id: 'about-content',
-        selector: '.about-content',
-        tags: ['@content', '@about']
-      },
-      {
-        group: 'team',
-        name: 'Team Section',
-        id: 'team',
-        selector: '.team-section',
-        tags: ['@team', '@about']
+        group: "test-page",
+        name: "Navigation",
+        id: "navigation",
+        tags: generateComponentTags(brandTag, "test-page", "Navigation"),
+        selector: "nav",
+        forceHide: {
+          type: "display",
+          selectors: [".mobile-menu"],
+          excludes: []
+        },
       }
     ]
   }

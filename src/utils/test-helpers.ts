@@ -251,3 +251,24 @@ export function runVisualTests(components: ComponentConfig[], globalForceHideSel
     });
   });
 }
+
+export function generatePageTags(brandTag: string, pageName: string): string[] {
+  return [
+    brandTag,
+    `@${pageName}`,
+    `@${pageName}-regression`,
+    `@${pageName}-visual`,
+    "@visual-regression"
+  ];
+}
+
+export function generateComponentTags(brandTag: string, groupName: string, componentName: string): string[] {
+  const baseName = componentName.toLowerCase().replace(/\s+/g, '-');
+  return [
+    brandTag,
+    `@${groupName}`,
+    `@${groupName}-${baseName}`,
+    `@${baseName}`,
+    "@component-visual"
+  ];
+}
