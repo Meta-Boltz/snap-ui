@@ -139,7 +139,8 @@ export async function hideElements(page: Page, selectors: string[]): Promise<voi
 
 export function updateVisualBaseline(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
   components.forEach((component) => {
-    test(`${component.name} - Baseline`, async ({ page }) => {
+    const testOptions = component.tags && component.tags.length > 0 ? { tag: component.tags } : {};
+    test(`${component.name} - Baseline`, testOptions, async ({ page }) => {
       // Comprehensive page preparation
       await prepareForVisualTesting(page, component.selector);
       
@@ -184,7 +185,8 @@ export function updateVisualBaseline(components: ComponentConfig[], globalForceH
 
 export function runVisualTests(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
   components.forEach((component) => {
-    test(`${component.name}`, async ({ page }) => {
+    const testOptions = component.tags && component.tags.length > 0 ? { tag: component.tags } : {};
+    test(`${component.name}`, testOptions, async ({ page }) => {
       // Comprehensive page preparation
       await prepareForVisualTesting(page, component.selector);
       
