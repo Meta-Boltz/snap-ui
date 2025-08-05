@@ -45,11 +45,11 @@ export async function generate() {
         await fsExtra.copy(dataPath, tempConfigPath);
         
         // Compile TypeScript to JavaScript using npx
-        try {
-          execSync(`npx tsc ${tempConfigPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck --allowSyntheticDefaultImports`, { 
-            stdio: 'pipe',
-            cwd: process.cwd()
-          });
+          try {
+            execSync(`npx tsc ${tempConfigPath} --target es2020 --module es2020 --outDir ${tempDir} --skipLibCheck --allowSyntheticDefaultImports --noResolve`, { 
+              stdio: 'pipe',
+              cwd: process.cwd()
+            });
           
           // Import the compiled JavaScript config file
           const jsConfigPath = path.join(tempDir, 'ui-test-data.js');
@@ -73,28 +73,174 @@ export async function generate() {
            await fsExtra.remove(tempDir);
           
           // Fallback to basic regex parsing for simple cases
-          const fileContent = fs.readFileSync(dataPath, 'utf8');
+          const content = fs.readFileSync(dataPath, 'utf8');
           
-          // Simple parsing for basic structure
-          const urlMatch = fileContent.match(/url:\s*["']([^"']+)["']/);
-          const pageMatch = fileContent.match(/page:\s*["']([^"']+)["']/);
-          
-          if (urlMatch && pageMatch) {
-            PageList = [{
-              page: pageMatch[1],
-              url: urlMatch[1],
-              components: []
-            }];
-          } else {
-            PageList = [];
+          // Try to extract PageList using regex - look for the array structure
+          const pageListStart = content.indexOf('export const PageList');
+          if (pageListStart !== -1) {
+            const arrayStart = content.indexOf('[', pageListStart);
+            if (arrayStart !== -1) {
+              let braceCount = 0;
+              let bracketCount = 1;
+              let i = arrayStart + 1;
+              
+              while (i < content.length && (bracketCount > 0 || braceCount > 0)) {
+                if (content[i] === '[') bracketCount++;
+                if (content[i] === ']') bracketCount--;
+                if (content[i] === '{') braceCount++;
+                if (content[i] === '}') braceCount--;
+                i++;
+              }
+              
+              if (bracketCount === 0 && braceCount === 0) {
+                const pageListStr = content.substring(arrayStart, i);
+                try {
+                  // Clean and parse the structure
+                  let cleanStr = pageListStr
+                    .replace(/'/g, '"')
+                    .replace(/,\s*}/g, '}')
+                    .replace(/,\s*\]/g, ']')
+                    .replace(/\/\*[\s\S]*?\*\//g, '')
+                    .replace(/\/\/.*$/gm, '');
+                  
+                  // Handle function calls by replacing them with empty arrays
+                  cleanStr = cleanStr.replace(/generatePageTags\([^)]*\)/g, '[]')
+                                   .replace(/generateComponentTags\([^)]*\)/g, '[]');
+                  
+                  PageList = JSON.parse(cleanStr);
+                } catch (parseError) {
+                  console.warn('Failed to parse PageList:', parseError);
+                }
+              }
+            }
           }
           
-          ForceHideSelectors = [
-            '.cookie-banner',
-            '.chat-widget',
-            '.live-chat',
-            '[data-test="advertisement"]'
-          ];
+          // Try to extract ForceHideSelectors
+          const forceHideStart = content.indexOf('export const ForceHideSelectors');
+          if (forceHideStart !== -1) {
+            const arrayStart = content.indexOf('[', forceHideStart);
+            if (arrayStart !== -1) {
+              const arrayEnd = content.indexOf(']', arrayStart);
+              if (arrayEnd !== -1) {
+                const forceHideStr = content.substring(arrayStart, arrayEnd + 1);
+                try {
+                  let cleanStr = forceHideStr
+                    .replace(/'/g, '"')
+                    .replace(/,\s*\]/g, ']')
+                    .replace(/\/\*[\s\S]*?\*\//g, '')
+                    .replace(/\/\/.*$/gm, '');
+                  ForceHideSelectors = JSON.parse(cleanStr);
+                } catch (parseError) {
+                  console.warn('Failed to parse ForceHideSelectors:', parseError);
+                }
+              }
+            }
+          }
+          
+          // If still no PageList, try to extract from PageList array
+          if (!PageList || PageList.length === 0) {
+            // Enhanced regex-based extraction for complex nested structures
+            const content = fs.readFileSync(dataPath, 'utf8');
+            
+            // Method 1: Try to extract complete PageList array
+            const pageListMatch = content.match(/export const PageList:\s*PageConfig\[]\s*=\s*(\[[\s\S]*?\]);/);
+            if (pageListMatch) {
+              try {
+                let cleanStr = pageListMatch[1];
+                
+                // Remove comments
+                cleanStr = cleanStr.replace(/\/\*[\s\S]*?\*\//g, '');
+                cleanStr = cleanStr.replace(/\/\/.*$/gm, '');
+                
+                // Replace function calls with proper arrays
+                cleanStr = cleanStr.replace(/generatePageTags\([^)]*\)/g, '["@snap-ui"]');
+                cleanStr = cleanStr.replace(/generateComponentTags\([^)]*\)/g, '["@snap-ui"]');
+                
+                // Handle forceHide objects - simplify to just selectors array
+                cleanStr = cleanStr.replace(/forceHide:\s*{[^}]*selectors:\s*\[([^\]]*)\][^}]*}/g, 'forceHide: [$1]');
+                
+                // Handle trailing commas
+                cleanStr = cleanStr.replace(/,(\s*[}\]])/g, '$1');
+                
+                // Replace single quotes with double quotes
+                cleanStr = cleanStr.replace(/'/g, '"');
+                
+                // Ensure proper JSON format
+                cleanStr = cleanStr.trim();
+                
+                PageList = JSON.parse(cleanStr);
+              } catch (parseError) {
+                // Silently fallback to manual extraction methods
+              }
+            }
+            
+            // Method 2: If JSON parsing fails, extract page objects manually
+            if (!PageList || PageList.length === 0) {
+              const pageObjects = [];
+              
+              // Extract page objects with their components
+              const pageRegex = /{\s*page:\s*["']([^"']+)["'][\s\S]*?url:\s*["']([^"']+)["'][\s\S]*?components:\s*\[([\s\S]*?)\][\s\S]*?}/g;
+              
+              let pageMatch;
+              while ((pageMatch = pageRegex.exec(content)) !== null) {
+                const page = pageMatch[1];
+                const url = pageMatch[2];
+                const componentsStr = pageMatch[3];
+                
+                // Extract components from the components array
+                const components = [];
+                const compRegex = /{\s*group:\s*["']([^"']+)["'][\s\S]*?name:\s*["']([^"']+)["'][\s\S]*?selector:\s*["']([^"']+)["'][\s\S]*?}/g;
+                
+                let compMatch;
+                while ((compMatch = compRegex.exec(componentsStr)) !== null) {
+                  components.push({
+                    group: compMatch[1],
+                    name: compMatch[2],
+                    selector: compMatch[3]
+                  });
+                }
+                
+                // If no components found, add a default one
+                if (components.length === 0) {
+                  components.push({ name: 'main', selector: 'body' });
+                }
+                
+                pageObjects.push({
+                  page,
+                  url,
+                  components
+                });
+              }
+              
+              if (pageObjects.length > 0) {
+                PageList = pageObjects;
+              } else {
+                // Method 3: Ultra-simple fallback - just extract page/url pairs
+                const simplePages = [];
+                const simpleRegex = /{\s*page:\s*["']([^"']+)["'][\s\S]*?url:\s*["']([^"']+)["'][\s\S]*?}/g;
+                
+                let simpleMatch;
+                while ((simpleMatch = simpleRegex.exec(content)) !== null) {
+                  simplePages.push({
+                    page: simpleMatch[1],
+                    url: simpleMatch[2],
+                    components: [{ name: 'main', selector: 'body' }]
+                  });
+                }
+                
+                PageList = simplePages;
+              }
+            }
+          }
+          
+          if (!ForceHideSelectors || ForceHideSelectors.length === 0) {
+            ForceHideSelectors = [
+              '.cookie-banner',
+              '.chat-widget',
+              '.live-chat',
+              '[data-test="advertisement"]'
+            ];
+          }
         }
       } catch (e: any) {
         console.warn('Could not read configuration file:', e.message || e);
@@ -188,16 +334,18 @@ export async function generate() {
       const baselineContent = `import { test, expect } from '@playwright/test';
 import { updateVisualBaseline } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
+import type { PageConfig, ComponentConfig } from '@meta-boltz/snap-ui';
 
-const pageConfig = PageList.find(p => p.page === '${pageName}');
-const forceHideSelectors = ForceHideSelectors;
+const pageConfig = PageList.find((p: PageConfig) => p.page === '${pageName}');
+const components = pageConfig?.components || [];
+const forceHideSelectors: string[] = ForceHideSelectors;
 
 test.describe('${pageName} - Visual Baseline', () => {
   test.beforeEach(async ({ page }) => {
     if (!pageConfig) {
       throw new Error('Page configuration not found for ${pageName}');
     }
-    await page.goto(pageConfig.url);
+    await page.goto(pageConfig!.url);
     
     // Hide elements that should not be part of visual comparison
     for (const selector of forceHideSelectors) {
@@ -207,40 +355,25 @@ test.describe('${pageName} - Visual Baseline', () => {
     }
   });
 
-  pageConfig.components.forEach(component => {
-    test(\`capture \${component.name}\`, async ({ page }) => {
-      const element = page.locator(component.selector);
-      await expect(element).toBeVisible();
-      
-      // Hide component-specific elements
-      if (component.forceHide && component.forceHide.length > 0) {
-        for (const selector of component.forceHide) {
-          await page.addStyleTag({
-            content: \`\${selector} { display: none !important; }\`
-          });
-        }
-      }
-
-      await updateVisualBaseline(page, component, pageConfig.page);
-    });
-  });
-});
-`;
+  updateVisualBaseline(components, forceHideSelectors);
+});`;
 
       // Generate comparison test file content
       const specContent = `import { test, expect } from '@playwright/test';
 import { runVisualTests } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
+import type { PageConfig, ComponentConfig } from '@meta-boltz/snap-ui';
 
-const pageConfig = PageList.find(p => p.page === '${pageName}');
-const forceHideSelectors = ForceHideSelectors;
+const pageConfig = PageList.find((p: PageConfig) => p.page === '${pageName}');
+const components = pageConfig?.components || [];
+const forceHideSelectors: string[] = ForceHideSelectors;
 
 test.describe('${pageName} - Visual Regression', () => {
   test.beforeEach(async ({ page }) => {
     if (!pageConfig) {
       throw new Error('Page configuration not found for ${pageName}');
     }
-    await page.goto(pageConfig.url);
+    await page.goto(pageConfig!.url);
     
     // Hide elements that should not be part of visual comparison
     for (const selector of forceHideSelectors) {
@@ -250,25 +383,8 @@ test.describe('${pageName} - Visual Regression', () => {
     }
   });
 
-  pageConfig.components.forEach(component => {
-    test(\`compare \${component.name}\`, async ({ page }) => {
-      const element = page.locator(component.selector);
-      await expect(element).toBeVisible();
-      
-      // Hide component-specific elements
-      if (component.forceHide && component.forceHide.length > 0) {
-        for (const selector of component.forceHide) {
-          await page.addStyleTag({
-            content: \`\${selector} { display: none !important; }\`
-          });
-        }
-      }
-
-      await runVisualTests(page, component, pageConfig.page);
-    });
-  });
-});
-`;
+  runVisualTests(components, forceHideSelectors);
+});`;
 
       if (fs.existsSync(baselinePath)) existingFiles.push(baselineFileName);
       if (fs.existsSync(specPath)) existingFiles.push(specFileName);
