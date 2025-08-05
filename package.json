@@ -1,6 +1,6 @@
 {
   "name": "@meta-boltz/snap-ui",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "A visual testing tool for Playwright.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -48,6 +48,7 @@
     "README.md"
   ],
   "dependencies": {
+    "@clack/prompts": "^0.7.0",
     "@playwright/test": "^1.54.2",
     "commander": "^9.4.1",
     "fs-extra": "^10.1.0",

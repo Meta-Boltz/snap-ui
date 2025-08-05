@@ -15,7 +15,14 @@ program
 program
   .command('init')
   .description('Initialize the project')
-  .action(init);
+  .action(async () => {
+    try {
+      await init();
+    } catch (error) {
+      console.error('Error initializing project:', error);
+      process.exit(1);
+    }
+  });
 
 program
   .command('run')
@@ -25,6 +32,13 @@ program
 program
   .command('generate')
   .description('Generate baseline test files')
-  .action(generate);
+  .action(async () => {
+    try {
+      await generate();
+    } catch (error) {
+      console.error('Error generating test files:', error);
+      process.exit(1);
+    }
+  });
 
 program.parse();

@@ -4,12 +4,18 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
+import * as p from '@clack/prompts';
+import { setTimeout } from 'timers/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export async function generate() {
-  console.log('Generating baseline test files...');
+  console.clear();
+  p.intro('🎯 snap-ui test file generator');
+  
+  const s = p.spinner();
+  s.start('Loading test configuration...');
   
   try {
     // Get the current working directory (where the command is run from)
@@ -24,21 +30,15 @@ export async function generate() {
     
     // Try to load the data file
     if (fs.existsSync(dataPath)) {
-      console.log('Loading data from TypeScript file...');
-      
-      // Use a more robust approach by temporarily compiling the TypeScript file
-      const tempDir = path.join(os.tmpdir(), 'snap-ui-compile-' + Date.now());
-      
       try {
-        fs.mkdirSync(tempDir, { recursive: true });
+        const tempDir = path.join(os.tmpdir(), 'snap-ui-compile-' + Date.now());
         
-        // Copy the data file to temp directory
-        const tempDataPath = path.join(tempDir, 'ui-test-data.ts');
-        fs.copyFileSync(dataPath, tempDataPath);
-        
-        // Compile TypeScript to JavaScript with better configuration
         try {
-          // Create a temporary tsconfig for compilation
+          fs.mkdirSync(tempDir, { recursive: true });
+          
+          const tempDataPath = path.join(tempDir, 'ui-test-data.ts');
+          fs.copyFileSync(dataPath, tempDataPath);
+          
           const tempTsConfig = path.join(tempDir, 'tsconfig.json');
           const tsConfigContent = {
             compilerOptions: {
@@ -64,87 +64,47 @@ export async function generate() {
             cwd: process.cwd()
           });
           
-          // Import the compiled JavaScript
           const compiledPath = path.join(tempDir, 'ui-test-data.js');
-          // Convert to file URL for ESM compatibility on Windows
           const fileUrl = 'file://' + compiledPath.replace(/\\/g, '/');
           const dataModule = await import(fileUrl);
           
           PageList = dataModule.PageList || [];
           ForceHideSelectors = dataModule.ForceHideSelectors || [];
           
-          if (PageList.length === 0) {
-            console.warn('Compiled successfully but PageList is empty');
-          }
-        } catch (compileError) {
+        } catch (error) {
           console.warn('TypeScript compilation failed, attempting manual parsing...');
-          console.warn('Compilation error:', (compileError as Error).message || compileError);
-          
-          // Create a simplified version by removing TypeScript-specific syntax
-          const fileContent = fs.readFileSync(dataPath, 'utf8');
-          
-          // Simple approach: create a basic JS file with the data
-          const simplifiedContent = fileContent
-            .replace(/:\s*\w+(\[\])?/g, '') // Remove type annotations
-            .replace(/:\s*\{[^}]*\}/g, '')
-            .replace(/:\s*\([^)]*\)\s*=>\s*[^,\]}]+/g, '')
-            .replace(/\bas\s+const/g, '')
-            .replace(/\bconst\s+\w+\s*=\s*[^;]+;/g, '')
-            .replace(/\bfunction\s+\w+\s*\([^)]*\)\s*\{[^}]*\}/g, '')
-            .replace(/\basync\s+\([^)]*\)\s*=>\s*\{[^}]*\}/g, '')
-            .replace(/\([^)]*\)\s*=>\s*[^,\]}]+/g, 'null');
-          
-          const simplifiedPath = path.join(tempDir, 'ui-test-data.js');
-          fs.writeFileSync(simplifiedPath, simplifiedContent);
-          
-          try {
-            const fileUrl = 'file://' + simplifiedPath.replace(/\\/g, '/');
-            const dataModule = await import(fileUrl);
-            PageList = dataModule.PageList || [];
-            ForceHideSelectors = dataModule.ForceHideSelectors || [];
-          } catch (importError) {
-            console.warn('Simplified parsing also failed:', (importError as Error).message || importError);
+        } finally {
+          if (fs.existsSync(tempDir)) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
           }
         }
-        
-        // Handle both 'components' and 'ComponentList' for backward compatibility
-        PageList = PageList.map((page: any) => ({
-          ...page,
-          components: page.components || page.ComponentList || []
-        }));
-        
-        // Ensure components have group attribute
-        PageList = PageList.map((page: any) => ({
-          ...page,
-          components: (page.components || []).map((comp: any) => ({
-            ...comp,
-            group: comp.group || comp.page || page.page
-          }))
-        }));
-        
       } catch (e: any) {
-         console.warn('Could not compile TypeScript, using fallback data:', e.message || e);
-      } finally {
-        // Clean up temp directory
-        if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
+        console.warn('Could not compile TypeScript, using fallback data:', e.message || e);
       }
     } else if (fs.existsSync(jsDataPath)) {
-      // Use dynamic import for JS file
       const jsFileUrl = 'file://' + jsDataPath.replace(/\\/g, '/');
       const { PageList: PL, ForceHideSelectors: FHS } = await import(jsFileUrl);
       PageList = PL;
       ForceHideSelectors = FHS;
     } else {
-      console.error('No ui-test-data.ts or ui-test-data.js found in data directory');
+      s.stop('Configuration file not found');
+      p.cancel('No ui-test-data.ts or ui-test-data.js found in data directory');
       process.exit(1);
     }
     
     if (!PageList || PageList.length === 0) {
-      console.warn('No PageList data found, creating example configuration...');
+      s.stop('No configuration found');
       
-      // Create a simple example configuration
+      const useExample = await p.confirm({
+        message: 'No PageList data found. Use example configuration?',
+        initialValue: true
+      });
+      
+      if (p.isCancel(useExample) || !useExample) {
+        p.cancel('Please update data/ui-test-data.ts with your actual configuration');
+        process.exit(0);
+      }
+      
       PageList = [
         {
           page: 'example',
@@ -168,9 +128,16 @@ export async function generate() {
         }
       ];
       ForceHideSelectors = [];
-      
-      console.warn('Using example configuration. Please update data/ui-test-data.ts with your actual configuration.');
     }
+
+    // Process and normalize data
+    PageList = PageList.map((page: any) => ({
+      ...page,
+      components: (page.components || page.ComponentList || []).map((comp: any) => ({
+        ...comp,
+        group: comp.group || comp.page || page.page
+      }))
+    }));
 
     // Create tests directory if it doesn't exist
     const testsDir = path.join(cwd, 'tests', 'ui');
@@ -178,74 +145,159 @@ export async function generate() {
       fs.mkdirSync(testsDir, { recursive: true });
     }
 
-    // Generate both baseline and comparison test files for each page
-    pagesLoop: for (const pageConfig of PageList) {
+    // Check for existing files
+    const existingFiles: string[] = [];
+    const filesToGenerate: Array<{ path: string; name: string; content: string }> = [];
+
+    s.stop('Configuration loaded');
+
+    // Prepare files to generate
+    for (const pageConfig of PageList) {
       const pageName = pageConfig.page;
       
-      // Skip if no components to test
       if (!pageConfig.components || pageConfig.components.length === 0) {
-        console.log(`Skipping ${pageName} - no components defined`);
-        continue pagesLoop;
+        continue;
       }
       
-      // Generate baseline test file
+      const baselineFileName = `${pageName}.baseline.spec.ts`;
+      const specFileName = `${pageName}.spec.ts`;
+      
+      const baselinePath = path.join(testsDir, baselineFileName);
+      const specPath = path.join(testsDir, specFileName);
+      
+      // Generate baseline test file content
       const baselineContent = `import { test, expect } from '@playwright/test';
 import { updateVisualBaseline } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
-const config = PageList.find(p => p.page === '${pageName}');
-const testData = config?.components || [];
-const baseURL = config?.url;
-const forceHideSelectors = ForceHideSelectors || [];
+const pageConfig = PageList.find(p => p.page === '${pageName}');
+const forceHideSelectors = ForceHideSelectors;
 
-test.describe('${pageName} Baseline Generation', () => {
+test.describe('${pageName} - Visual Baseline', () => {
   test.beforeEach(async ({ page }) => {
-    if (!config || !baseURL) {
-      throw new Error('Page configuration for ${pageName} not found');
+    if (!pageConfig) {
+      throw new Error('Page configuration not found for ${pageName}');
     }
-    await page.goto(baseURL);
-    await page.waitForLoadState('networkidle');
+    await page.goto(pageConfig.url);
+    
+    // Hide elements that should not be part of visual comparison
+    for (const selector of forceHideSelectors) {
+      await page.addStyleTag({
+        content: \`\${selector} { display: none !important; }\`
+      });
+    }
   });
 
-  updateVisualBaseline(testData, forceHideSelectors);
-});`;
+  pageConfig.components.forEach(component => {
+    test(\`capture \${component.name}\`, async ({ page }) => {
+      const element = page.locator(component.selector);
+      await expect(element).toBeVisible();
+      
+      // Hide component-specific elements
+      if (component.forceHide && component.forceHide.length > 0) {
+        for (const selector of component.forceHide) {
+          await page.addStyleTag({
+            content: \`\${selector} { display: none !important; }\`
+          });
+        }
+      }
 
-      // Generate comparison test file
-      const comparisonContent = `import { test, expect } from '@playwright/test';
+      await updateVisualBaseline(page, component, pageConfig.page);
+    });
+  });
+});
+`;
+
+      // Generate comparison test file content
+      const specContent = `import { test, expect } from '@playwright/test';
 import { runVisualTests } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
-const config = PageList.find(p => p.page === '${pageName}');
-const testData = config?.components || [];
-const baseURL = config?.url;
-const forceHideSelectors = ForceHideSelectors || [];
+const pageConfig = PageList.find(p => p.page === '${pageName}');
+const forceHideSelectors = ForceHideSelectors;
 
-test.describe('${pageName} Visual Regression Tests', () => {
+test.describe('${pageName} - Visual Regression', () => {
   test.beforeEach(async ({ page }) => {
-    if (!config || !baseURL) {
-      throw new Error('Page configuration for ${pageName} not found');
+    if (!pageConfig) {
+      throw new Error('Page configuration not found for ${pageName}');
     }
-    await page.goto(baseURL);
-    await page.waitForLoadState('networkidle');
+    await page.goto(pageConfig.url);
+    
+    // Hide elements that should not be part of visual comparison
+    for (const selector of forceHideSelectors) {
+      await page.addStyleTag({
+        content: \`\${selector} { display: none !important; }\`
+      });
+    }
   });
 
-  runVisualTests(testData, forceHideSelectors);
-});`;
-
-      const baselineFileName = `${pageName}.baseline.spec.ts`;
-      const comparisonFileName = `${pageName}.spec.ts`;
-      const baselineFilePath = path.join(testsDir, baselineFileName);
-      const comparisonFilePath = path.join(testsDir, comparisonFileName);
+  pageConfig.components.forEach(component => {
+    test(\`compare \${component.name}\`, async ({ page }) => {
+      const element = page.locator(component.selector);
+      await expect(element).toBeVisible();
       
-      fs.writeFileSync(baselineFilePath, baselineContent);
-      fs.writeFileSync(comparisonFilePath, comparisonContent);
-      console.log(`Generated: ${baselineFilePath}`);
-      console.log(`Generated: ${comparisonFilePath}`);
+      // Hide component-specific elements
+      if (component.forceHide && component.forceHide.length > 0) {
+        for (const selector of component.forceHide) {
+          await page.addStyleTag({
+            content: \`\${selector} { display: none !important; }\`
+          });
+        }
+      }
+
+      await runVisualTests(page, component, pageConfig.page);
+    });
+  });
+});
+`;
+
+      if (fs.existsSync(baselinePath)) existingFiles.push(baselineFileName);
+      if (fs.existsSync(specPath)) existingFiles.push(specFileName);
+      
+      filesToGenerate.push(
+        { path: baselinePath, name: baselineFileName, content: baselineContent },
+        { path: specPath, name: specFileName, content: specContent }
+      );
     }
 
-    console.log('All baseline test files generated successfully!');
+    if (existingFiles.length > 0) {
+      const overwrite = await p.confirm({
+        message: `${existingFiles.length} test file(s) already exist. Overwrite?`,
+        initialValue: false
+      });
+      
+      if (p.isCancel(overwrite)) {
+        p.cancel('Generation cancelled');
+        process.exit(0);
+      }
+      
+      if (!overwrite) {
+        p.note('Skipping existing files. No changes made.', 'Files Preserved');
+        p.outro('Generation complete!');
+        return;
+      }
+    }
+
+    const progress = p.spinner();
+    progress.start('Generating test files...');
+
+    let generatedCount = 0;
+    
+    for (const file of filesToGenerate) {
+      fs.writeFileSync(file.path, file.content);
+      generatedCount++;
+    }
+
+    await setTimeout(1000);
+    progress.stop(`Generated ${generatedCount} test files`);
+
+    const generatedFiles = filesToGenerate.map(f => `📄 ${f.name}`).join('\n');
+    p.note(generatedFiles, 'Generated Files');
+    
+    p.outro('Generation complete! 🎉\n\nNext steps:\n1. Run \`npx snap-ui run\` to execute visual tests\n2. Check the generated files in tests/ui/\n3. Update your Playwright config if needed');
+    
   } catch (error) {
-    console.error('Error generating test files:', error);
+    p.cancel('Generation failed. Please check your configuration.');
     process.exit(1);
   }
 }
