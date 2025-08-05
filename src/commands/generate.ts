@@ -31,82 +31,64 @@ export async function generate() {
     // Try to load the data file
     if (fs.existsSync(dataPath)) {
       try {
-        const fileContent = fs.readFileSync(dataPath, 'utf8');
+        // Use a more robust approach: compile TypeScript to JavaScript
+        const { execSync } = await import('child_process');
+        const os = await import('os');
+        const fsExtra = await import('fs-extra');
         
-        // Parse PageList using regex with better handling
-        const pageListMatch = fileContent.match(/export const PageList: PageConfig\[\] = \[([\s\S]*?)\];/);
-        if (pageListMatch) {
-          try {
-            let pageListStr = pageListMatch[1];
-            
-            // Replace generatePageTags and generateComponentTags with actual arrays
-            pageListStr = pageListStr.replace(/generatePageTags\([^)]+\)/g, '["@snap-ui"]');
-            pageListStr = pageListStr.replace(/generateComponentTags\([^)]+\)/g, '["@snap-ui"]');
-            
-            // Handle forceHide objects
-            pageListStr = pageListStr.replace(/forceHide:\s*{[^}]*}/g, '""');
-            
-            // Clean up the content to make it valid JSON
-            pageListStr = pageListStr.replace(/'/g, '"');
-            pageListStr = pageListStr.replace(/,(\s*[}\]])/g, '$1');
-            pageListStr = pageListStr.replace(/\/\*[\s\S]*?\*\//g, '');
-            pageListStr = pageListStr.replace(/\/\/.*$/gm, '');
-            
-            const jsonStr = `[${pageListStr}]`;
-            PageList = JSON.parse(jsonStr);
-          } catch (parseError) {
-            console.warn('Could not parse PageList:', parseError);
-            // Fallback to manual parsing for test-page
-            PageList = [
-              {
-                page: "test-page",
-                url: "https://playwright.dev",
-                tags: ["@snap-ui"],
-                components: [
-                  {
-                    group: "test-page",
-                    name: "Hero Section",
-                    id: "hero-section",
-                    tags: ["@snap-ui"],
-                    selector: "h1"
-                  },
-                  {
-                    group: "test-page",
-                    name: "Navigation", 
-                    id: "navigation",
-                    tags: ["@snap-ui"],
-                    selector: "nav"
-                  }
-                ]
-              }
-            ];
-          }
-        } else {
-          PageList = [];
-        }
+        // Create a temporary directory for compilation
+        const tempDir = path.join(os.tmpdir(), 'snap-ui-temp-' + Date.now());
+        await fsExtra.ensureDir(tempDir);
         
-        // Parse ForceHideSelectors
-        const forceHideMatch = fileContent.match(/export const ForceHideSelectors = \[([\s\S]*?)\];/);
-        if (forceHideMatch) {
-          try {
-            let forceHideStr = forceHideMatch[1];
-            forceHideStr = forceHideStr.replace(/'/g, '"');
-            forceHideStr = forceHideStr.replace(/,(\s*\])/g, '$1');
-            forceHideStr = forceHideStr.replace(/\/\*[\s\S]*?\*\//g, '');
-            forceHideStr = forceHideStr.replace(/\/\/.*$/gm, '');
-            
-            const jsonStr = `[${forceHideStr}]`;
-            ForceHideSelectors = JSON.parse(jsonStr);
-          } catch (parseError) {
-            console.warn('Could not parse ForceHideSelectors:', parseError);
-            ForceHideSelectors = [
-              '.cookie-banner',
-              '.chat-widget',
-              '.live-chat',
-              '[data-test="advertisement"]'
-            ];
+        // Copy the config file to temp directory
+        const tempConfigPath = path.join(tempDir, 'ui-test-data.ts');
+        await fsExtra.copy(dataPath, tempConfigPath);
+        
+        // Compile TypeScript to JavaScript using npx
+        try {
+          execSync(`npx tsc ${tempConfigPath} --target es2020 --module commonjs --outDir ${tempDir} --skipLibCheck --allowSyntheticDefaultImports`, { 
+            stdio: 'pipe',
+            cwd: process.cwd()
+          });
+          
+          // Import the compiled JavaScript config file
+          const jsConfigPath = path.join(tempDir, 'ui-test-data.js');
+          const configUrl = 'file://' + jsConfigPath.replace(/\\/g, '/');
+          const module = await import(configUrl);
+          
+          PageList = module.PageList || [];
+          ForceHideSelectors = module.ForceHideSelectors || [
+            '.cookie-banner',
+            '.chat-widget',
+            '.live-chat',
+            '[data-test="advertisement"]'
+          ];
+          
+          // Clean up temp directory
+          await fsExtra.remove(tempDir);
+        } catch (compileError) {
+          console.warn('TypeScript compilation failed, using fallback parsing...');
+          
+          // Clean up temp directory
+           await fsExtra.remove(tempDir);
+          
+          // Fallback to basic regex parsing for simple cases
+          const fileContent = fs.readFileSync(dataPath, 'utf8');
+          
+          // Simple parsing for basic structure
+          const urlMatch = fileContent.match(/url:\s*["']([^"']+)["']/);
+          const pageMatch = fileContent.match(/page:\s*["']([^"']+)["']/);
+          
+          if (urlMatch && pageMatch) {
+            PageList = [{
+              page: pageMatch[1],
+              url: urlMatch[1],
+              components: []
+            }];
+          } else {
+            PageList = [];
           }
-        } else {
+          
           ForceHideSelectors = [
             '.cookie-banner',
             '.chat-widget',
@@ -331,7 +313,7 @@ test.describe('${pageName} - Visual Regression', () => {
     const generatedFiles = filesToGenerate.map(f => `📄 ${f.name}`).join('\n');
     p.note(generatedFiles, 'Generated Files');
     
-    p.outro('Generation complete! 🎉\n\nNext steps:\n1. Run \`npx snap-ui run\` to execute visual tests\n2. Check the generated files in tests/ui/\n3. Update your Playwright config if needed');
+    p.outro('Generation complete! 🎉\n\nNext steps:\n1. Run `npx snap-ui run` to execute visual tests\n2. Check the generated files in tests/ui/\n3. Update your Playwright config if needed');
     
   } catch (error) {
     p.cancel('Generation failed. Please check your configuration.');
