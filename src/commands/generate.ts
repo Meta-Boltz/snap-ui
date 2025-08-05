@@ -332,9 +332,8 @@ export async function generate() {
       
       // Generate baseline test file content
       const baselineContent = `import { test, expect } from '@playwright/test';
-import { updateVisualBaseline } from '@meta-boltz/snap-ui';
+import { updateVisualBaseline, type PageConfig, type ComponentConfig } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
-import type { PageConfig, ComponentConfig } from '@meta-boltz/snap-ui';
 
 const pageConfig = PageList.find((p: PageConfig) => p.page === '${pageName}');
 const components = pageConfig?.components || [];
@@ -364,9 +363,8 @@ test.describe('${pageName} - Visual Baseline', () => {
 
       // Generate comparison test file content
       const specContent = `import { test, expect } from '@playwright/test';
-import { runVisualTests } from '@meta-boltz/snap-ui';
+import { runVisualTests, type PageConfig, type ComponentConfig } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
-import type { PageConfig, ComponentConfig } from '@meta-boltz/snap-ui';
 
 const pageConfig = PageList.find((p: PageConfig) => p.page === '${pageName}');
 const components = pageConfig?.components || [];

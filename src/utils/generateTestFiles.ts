@@ -77,7 +77,7 @@ export async function generateTestFiles() {
 
 function generateBaselineTestContent(page: string, baseURL: string): string {
   return `import { test } from '@playwright/test';
-import { updateVisualBaseline } from '@meta-boltz/snap-ui';
+import { updateVisualBaseline, type PageConfig, type ComponentConfig } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${page}');
@@ -94,7 +94,7 @@ components.forEach(component => {
 
 function generateTestContent(page: string, baseURL: string): string {
   return `import { test } from '@playwright/test';
-import { runVisualTests } from '@meta-boltz/snap-ui';
+import { runVisualTests, type PageConfig, type ComponentConfig } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${page}');
