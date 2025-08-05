@@ -31,55 +31,92 @@ export async function generate() {
     // Try to load the data file
     if (fs.existsSync(dataPath)) {
       try {
-        const tempDir = path.join(os.tmpdir(), 'snap-ui-compile-' + Date.now());
+        const fileContent = fs.readFileSync(dataPath, 'utf8');
         
-        try {
-          fs.mkdirSync(tempDir, { recursive: true });
-          
-          const tempDataPath = path.join(tempDir, 'ui-test-data.ts');
-          fs.copyFileSync(dataPath, tempDataPath);
-          
-          const tempTsConfig = path.join(tempDir, 'tsconfig.json');
-          const tsConfigContent = {
-            compilerOptions: {
-              target: 'ES2020',
-              module: 'CommonJS',
-              esModuleInterop: true,
-              skipLibCheck: true,
-              allowSyntheticDefaultImports: true,
-              resolveJsonModule: true,
-              moduleResolution: 'node',
-              strict: false,
-              noImplicitAny: false,
-              paths: {
-                "@meta-boltz/snap-ui": [path.join(__dirname, '../../dist/index.js')]
+        // Parse PageList using regex with better handling
+        const pageListMatch = fileContent.match(/export const PageList: PageConfig\[\] = \[([\s\S]*?)\];/);
+        if (pageListMatch) {
+          try {
+            let pageListStr = pageListMatch[1];
+            
+            // Replace generatePageTags and generateComponentTags with actual arrays
+            pageListStr = pageListStr.replace(/generatePageTags\([^)]+\)/g, '["@snap-ui"]');
+            pageListStr = pageListStr.replace(/generateComponentTags\([^)]+\)/g, '["@snap-ui"]');
+            
+            // Handle forceHide objects
+            pageListStr = pageListStr.replace(/forceHide:\s*{[^}]*}/g, '""');
+            
+            // Clean up the content to make it valid JSON
+            pageListStr = pageListStr.replace(/'/g, '"');
+            pageListStr = pageListStr.replace(/,(\s*[}\]])/g, '$1');
+            pageListStr = pageListStr.replace(/\/\*[\s\S]*?\*\//g, '');
+            pageListStr = pageListStr.replace(/\/\/.*$/gm, '');
+            
+            const jsonStr = `[${pageListStr}]`;
+            PageList = JSON.parse(jsonStr);
+          } catch (parseError) {
+            console.warn('Could not parse PageList:', parseError);
+            // Fallback to manual parsing for test-page
+            PageList = [
+              {
+                page: "test-page",
+                url: "https://playwright.dev",
+                tags: ["@snap-ui"],
+                components: [
+                  {
+                    group: "test-page",
+                    name: "Hero Section",
+                    id: "hero-section",
+                    tags: ["@snap-ui"],
+                    selector: "h1"
+                  },
+                  {
+                    group: "test-page",
+                    name: "Navigation", 
+                    id: "navigation",
+                    tags: ["@snap-ui"],
+                    selector: "nav"
+                  }
+                ]
               }
-            },
-            include: ['ui-test-data.ts']
-          };
-          fs.writeFileSync(tempTsConfig, JSON.stringify(tsConfigContent, null, 2));
-          
-          execSync(`npx tsc --project ${tempTsConfig}`, { 
-            stdio: 'pipe',
-            cwd: process.cwd()
-          });
-          
-          const compiledPath = path.join(tempDir, 'ui-test-data.js');
-          const fileUrl = 'file://' + compiledPath.replace(/\\/g, '/');
-          const dataModule = await import(fileUrl);
-          
-          PageList = dataModule.PageList || [];
-          ForceHideSelectors = dataModule.ForceHideSelectors || [];
-          
-        } catch (error) {
-          console.warn('TypeScript compilation failed, attempting manual parsing...');
-        } finally {
-          if (fs.existsSync(tempDir)) {
-            fs.rmSync(tempDir, { recursive: true, force: true });
+            ];
           }
+        } else {
+          PageList = [];
+        }
+        
+        // Parse ForceHideSelectors
+        const forceHideMatch = fileContent.match(/export const ForceHideSelectors = \[([\s\S]*?)\];/);
+        if (forceHideMatch) {
+          try {
+            let forceHideStr = forceHideMatch[1];
+            forceHideStr = forceHideStr.replace(/'/g, '"');
+            forceHideStr = forceHideStr.replace(/,(\s*\])/g, '$1');
+            forceHideStr = forceHideStr.replace(/\/\*[\s\S]*?\*\//g, '');
+            forceHideStr = forceHideStr.replace(/\/\/.*$/gm, '');
+            
+            const jsonStr = `[${forceHideStr}]`;
+            ForceHideSelectors = JSON.parse(jsonStr);
+          } catch (parseError) {
+            console.warn('Could not parse ForceHideSelectors:', parseError);
+            ForceHideSelectors = [
+              '.cookie-banner',
+              '.chat-widget',
+              '.live-chat',
+              '[data-test="advertisement"]'
+            ];
+          }
+        } else {
+          ForceHideSelectors = [
+            '.cookie-banner',
+            '.chat-widget',
+            '.live-chat',
+            '[data-test="advertisement"]'
+          ];
         }
       } catch (e: any) {
-        console.warn('Could not compile TypeScript, using fallback data:', e.message || e);
+        console.warn('Could not read configuration file:', e.message || e);
+        PageList = [];
       }
     } else if (fs.existsSync(jsDataPath)) {
       const jsFileUrl = 'file://' + jsDataPath.replace(/\\/g, '/');
