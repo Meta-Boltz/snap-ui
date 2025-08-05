@@ -355,7 +355,11 @@ test.describe('${pageName} - Visual Baseline', () => {
     }
   });
 
-  updateVisualBaseline(components, forceHideSelectors);
+  for (const component of components) {
+    test(component.name + ' - Visual Baseline', async ({ page }, testInfo) => {
+      await updateVisualBaseline({ page, testInfo, component, forceHideSelectors });
+    });
+  }
 });`;
 
       // Generate comparison test file content
@@ -383,7 +387,11 @@ test.describe('${pageName} - Visual Regression', () => {
     }
   });
 
-  runVisualTests(components, forceHideSelectors);
+  for (const component of components) {
+    test(component.name + ' - Visual Regression', async ({ page }, testInfo) => {
+      await runVisualTests({ page, testInfo, component, forceHideSelectors });
+    });
+  }
 });`;
 
       if (fs.existsSync(baselinePath)) existingFiles.push(baselineFileName);

@@ -1,4 +1,4 @@
-import { test, Page } from '@playwright/test';
+import { test, Page, TestInfo } from '@playwright/test';
 import fs from 'fs-extra';
 import * as path from 'path';
 import { PNG } from 'pngjs';
@@ -137,121 +137,133 @@ export async function hideElements(page: Page, selectors: string[]): Promise<voi
   }, selectors);
 }
 
-export function updateVisualBaseline(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
-  components.forEach((component) => {
-    const testOptions = component.tags && component.tags.length > 0 ? { tag: component.tags } : {};
-    test(`${component.name} - Baseline`, testOptions, async ({ page }) => {
-      // Comprehensive page preparation
-      await prepareForVisualTesting(page, component.selector);
-      
-      // Run preConditions if provided
-      if (component.preConditions) {
-        await component.preConditions();
-      }
-      
-      // Apply global force hide selectors
-      if (globalForceHideSelectors.length > 0) {
-        await hideElements(page, globalForceHideSelectors);
-      }
-      
-      // Apply component-specific force hide selectors
-      if (component.forceHide?.selectors) {
-        await hideElements(page, component.forceHide.selectors);
-      }
-      
-      // Set viewport if specified
-      if (component.viewport) {
-        await page.setViewportSize(component.viewport);
-      }
-      
-      // Final element preparation
-      await prepareElementForScreenshot(page, component.selector);
-      
-      // Use locator-based screenshot for precise element targeting
-      const locator = page.locator(component.selector);
-      const screenshot = await locator.screenshot({
-        omitBackground: true
-      });
-      
-      const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}.png`);
-      
-      await fs.ensureDir(path.dirname(baselinePath));
-      
-      await fs.writeFile(baselinePath, screenshot);
-      console.log(`✅ Baseline saved: ${component.name}`);
-    });
+
+export async function takeScreenshot(page: Page, component: ComponentConfig, projectName: string, globalForceHideSelectors: string[] = []): Promise<Buffer> {
+  // Comprehensive page preparation
+  await prepareForVisualTesting(page, component.selector);
+
+  // Run preConditions if provided
+  if (component.preConditions) {
+    await component.preConditions();
+  }
+
+  // Apply global force hide selectors
+  if (globalForceHideSelectors.length > 0) {
+    await hideElements(page, globalForceHideSelectors);
+  }
+
+  // Apply component-specific force hide selectors
+  if (component.forceHide?.selectors) {
+    await hideElements(page, component.forceHide.selectors);
+  }
+
+  // Set viewport if specified
+  if (component.viewport) {
+    await page.setViewportSize(component.viewport);
+  }
+
+  // Final element preparation
+  await prepareElementForScreenshot(page, component.selector);
+
+  // Use locator-based screenshot for precise element targeting
+  const locator = page.locator(component.selector);
+  return locator.screenshot({
+    omitBackground: true
   });
 }
 
-export function runVisualTests(components: ComponentConfig[], globalForceHideSelectors: string[] = []) {
-  components.forEach((component) => {
-    const testOptions = component.tags && component.tags.length > 0 ? { tag: component.tags } : {};
-    test(`${component.name}`, testOptions, async ({ page }) => {
-      // Comprehensive page preparation
-      await prepareForVisualTesting(page, component.selector);
-      
-      // Run preConditions if provided
-      if (component.preConditions) {
-        await component.preConditions();
-      }
-      
-      // Apply global force hide selectors
-      if (globalForceHideSelectors.length > 0) {
-        await hideElements(page, globalForceHideSelectors);
-      }
-      
-      // Apply component-specific force hide selectors
-      if (component.forceHide?.selectors) {
-        await hideElements(page, component.forceHide.selectors);
-      }
-      
-      // Set viewport if specified
-      if (component.viewport) {
-        await page.setViewportSize(component.viewport);
-      }
-      
-      // Final element preparation
-      await prepareElementForScreenshot(page, component.selector);
-      
-      // Use locator-based screenshot for precise element targeting
-      const locator = page.locator(component.selector);
-      const screenshot = await locator.screenshot({
-        omitBackground: true
-      });
-      
-      const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}.png`);
-      const actualPath = path.join(process.cwd(), 'screenshots', 'actual', `${component.id}.png`);
-      const diffPath = path.join(process.cwd(), 'screenshots', 'diff', `${component.id}.png`);
-      
-      await fs.ensureDir(path.dirname(baselinePath));
-      await fs.ensureDir(path.dirname(actualPath));
-      await fs.ensureDir(path.dirname(diffPath));
-      
-      if (await fs.pathExists(baselinePath)) {
-        const baseline = PNG.sync.read(await fs.readFile(baselinePath));
-        const actual = PNG.sync.read(screenshot);
-        
-        const { width, height } = baseline;
-        const diff = new PNG({ width, height });
-        
-        const numDiffPixels = pixelmatch(baseline.data, actual.data, diff.data, width, height, { threshold: 0.1 });
-        
-        if (numDiffPixels > 0) {
-          await fs.writeFile(actualPath, screenshot);
-          await fs.writeFile(diffPath, PNG.sync.write(diff));
-          throw new Error(`Visual regression detected for "${component.name}". ${numDiffPixels} pixels differ.`);
-        } else {
-          // Test passed, clean up the actual screenshot
-          if (await fs.pathExists(actualPath)) {
-            await fs.remove(actualPath);
-          }
-          console.log(`✅ No visual changes: ${component.name}`);
-        }
-      } else {
-        throw new Error(`No baseline found for "${component.name}". Please run baseline generation first.`);
-      }
-    });
+export async function updateVisualBaseline({ page, testInfo, component, forceHideSelectors: globalForceHideSelectors = [] }: { page: Page; testInfo: TestInfo; component: ComponentConfig; forceHideSelectors?: string[]; }) {
+  const projectName = testInfo.project.name;
+  const screenshot = await takeScreenshot(page, component, projectName, globalForceHideSelectors);
+  const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}-${projectName}.png`);
+  await fs.ensureDir(path.dirname(baselinePath));
+  await fs.writeFile(baselinePath, screenshot);
+  console.log(`✅ Baseline saved: ${component.name}`);
+}
+
+export async function runVisualTests({ page, testInfo, component, forceHideSelectors: globalForceHideSelectors = [] }: { page: Page; testInfo: TestInfo; component: ComponentConfig; forceHideSelectors?: string[]; }) {
+  const projectName = testInfo.project.name;
+  const actualScreenshot = await takeScreenshot(page, component, projectName, globalForceHideSelectors);
+
+  const baselinePath = path.join(process.cwd(), 'screenshots', 'baseline', `${component.id}-${projectName}.png`);
+  const actualPath = path.join(process.cwd(), 'screenshots', 'actual', `${component.id}-${projectName}.png`);
+  const diffPath = path.join(process.cwd(), 'screenshots', 'diff', `${component.id}-${projectName}.png`);
+
+  await fs.ensureDir(path.dirname(actualPath));
+  await fs.writeFile(actualPath, actualScreenshot);
+
+  if (!fs.existsSync(baselinePath)) {
+    test.fail(true, `Baseline image not found at ${baselinePath}. Please run baseline tests first.`);
+    return; // test.fail throws, but for clarity
+  }
+
+  const baseline = PNG.sync.read(fs.readFileSync(baselinePath));
+  const actual = PNG.sync.read(actualScreenshot);
+
+  console.log(`[${projectName}] Component: ${component.name} - Baseline dimensions: ${baseline.width}x${baseline.height}`);
+  console.log(`[${projectName}] Component: ${component.name} - Actual dimensions: ${actual.width}x${actual.height}`);
+
+  if (baseline.width !== actual.width || baseline.height !== actual.height) {
+    test.fail(true, `Screenshot dimensions do not match for ${component.name}. Baseline: ${baseline.width}x${baseline.height}, Actual: ${actual.width}x${actual.height}`);
+    return;
+  }
+
+  const { width, height } = baseline;
+
+  // Create a blended image for the background of the diff
+  const blended = new PNG({ width, height });
+  for (let i = 0; i < baseline.data.length; i += 4) {
+    const alpha = 0.2; // 20% opacity for the actual image
+    blended.data[i] = baseline.data[i] * (1 - alpha) + actual.data[i] * alpha;
+    blended.data[i + 1] = baseline.data[i + 1] * (1 - alpha) + actual.data[i + 1] * alpha;
+    blended.data[i + 2] = baseline.data[i + 2] * (1 - alpha) + actual.data[i + 2] * alpha;
+    blended.data[i + 3] = Math.max(baseline.data[i + 3], actual.data[i + 3]);
+  }
+
+  // Create a diff mask
+  const diff = new PNG({ width, height });
+  console.log(`[${projectName}] Component: ${component.name} - Running pixelmatch...`);
+  const numDiffPixels = pixelmatch(baseline.data, actual.data, diff.data, width, height, {
+    threshold: 0.1,
+    diffMask: true, // Create a mask with only the differing pixels
   });
+  console.log(`[${projectName}] Component: ${component.name} - Pixelmatch complete.`);
+
+  console.log(`[${projectName}] Component: ${component.name} - Diff pixels: ${numDiffPixels}`);
+
+  if (numDiffPixels > 0) {
+    console.log(`[${projectName}] Component: ${component.name} - Mismatch detected. Saving diff image to ${diffPath}`);
+
+    // Composite the diff mask over the blended image
+    for (let i = 0; i < diff.data.length; i += 4) {
+      if (diff.data[i + 3] > 0) { // If the diff pixel is not transparent
+        blended.data[i] = diff.data[i];
+        blended.data[i + 1] = diff.data[i + 1];
+        blended.data[i + 2] = diff.data[i + 2];
+        blended.data[i + 3] = diff.data[i + 3];
+      }
+    }
+
+    try {
+      console.log(`[${projectName}] Component: ${component.name} - Attempting to save diff image...`);
+      fs.ensureDirSync(path.dirname(diffPath));
+      fs.writeFileSync(diffPath, PNG.sync.write(blended));
+      console.log(`[${projectName}] Component: ${component.name} - Diff image saved successfully to ${diffPath}`);
+    } catch (error) {
+      console.error(`[${projectName}] Component: ${component.name} - FAILED to save diff image:`, error);
+    }
+    test.fail(true, `Visual regression failed: ${numDiffPixels} pixels differ.`);
+  } else {
+    // Test passed, cleanup screenshots
+    if (fs.existsSync(actualPath)) {
+      fs.unlinkSync(actualPath);
+      console.log(`[${projectName}] Component: ${component.name} - Test passed. Cleaned up actual screenshot.`);
+    }
+    if (fs.existsSync(diffPath)) {
+      fs.unlinkSync(diffPath);
+      console.log(`[${projectName}] Component: ${component.name} - Test passed. Cleaned up old diff screenshot.`);
+    }
+  }
 }
 
 export function generatePageTags(brandTag: string, pageName: string): string[] {

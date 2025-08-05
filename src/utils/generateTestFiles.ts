@@ -76,41 +76,35 @@ export async function generateTestFiles() {
 }
 
 function generateBaselineTestContent(page: string, baseURL: string): string {
-  return `import { test, expect } from '@playwright/test';
+  return `import { test } from '@playwright/test';
 import { updateVisualBaseline } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${page}');
-const testData = config?.components || [];
-const baseURL = '${baseURL}';
+const components = config?.components || [];
 const forceHideSelectors = ForceHideSelectors || [];
 
-test.describe('${page} - Baseline Generation', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto(process.env.TEST_URL || baseURL);
-    await page.waitForLoadState('networkidle');
-  });
-
-  updateVisualBaseline(testData, forceHideSelectors);
+components.forEach(component => {
+  updateVisualBaseline([component], forceHideSelectors, (page) => {
+    const viewport = page.viewportSize();
+    return viewport && viewport.width < 768 ? 'mobile' : 'desktop';
+  }, component.name);
 });`;
 }
 
 function generateTestContent(page: string, baseURL: string): string {
-  return `import { test, expect } from '@playwright/test';
+  return `import { test } from '@playwright/test';
 import { runVisualTests } from '@meta-boltz/snap-ui';
 import { PageList, ForceHideSelectors } from '../../data/ui-test-data';
 
 const config = PageList.find(p => p.page === '${page}');
-const testData = config?.components || [];
-const baseURL = '${baseURL}';
+const components = config?.components || [];
 const forceHideSelectors = ForceHideSelectors || [];
 
-test.describe('${page} - Visual Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto(process.env.TEST_URL || baseURL);
-    await page.waitForLoadState('networkidle');
-  });
-
-  runVisualTests(testData, forceHideSelectors);
+components.forEach(component => {
+  runVisualTests([component], forceHideSelectors, (page) => {
+    const viewport = page.viewportSize();
+    return viewport && viewport.width < 768 ? 'mobile' : 'desktop';
+  }, component.name);
 });`;
 }
