@@ -32,9 +32,10 @@ program
 program
   .command('generate')
   .description('Generate baseline test files')
-  .action(async () => {
+  .option('--input <path>', 'Path to CSV file for test generation')
+  .action(async (options) => {
     try {
-      await generate();
+      await generate(options);
     } catch (error) {
       console.error('Error generating test files:', error);
       process.exit(1);

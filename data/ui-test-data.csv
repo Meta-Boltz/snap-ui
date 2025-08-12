@@ -1,0 +1,5 @@
+File name,Url,Description,Selector,Conditions
+pdp,https://epi-preprod.northshorecare.com/adult-diapers/adult-diapers-with-tabs/northshore-megamax-tab-style-briefs,Product Top Section,"div[data-component^=""productContainer""]","- Hide: '#header', '.modal-backdrop.flyout', '.leaderboardblock', '#onetrust-banner-sdk'
+- Body padding-top = 0"
+pdp,https://epi-preprod.northshorecare.com/adult-diapers/adult-diapers-with-tabs/northshore-megamax-tab-style-briefs,Product Top Section - Selected Variant,"div[data-component^=""productContainer""]","- Hide: '#header', '.modal-backdrop.flyout', '.leaderboardblock', '#onetrust-banner-sdk'
+- Body padding-top = 0"

@@ -1,0 +1,33 @@
+import test, { expect } from "playwright/test";
+import { environment } from "../../config/environment";
+
+test.describe('${row.File_name?.toUpperCase() || 'UI'} - Visual Testing', () => {
+	test('${row.Description || 'Test Case'}', async ({ page }) => {
+		/**
+		 * Conditions part:
+		 * ${row.Conditions || 'No specific conditions'}
+		 */
+		const url = environment.buildUrl("${row.Url || ''}");
+		const currentEnv = environment.getCurrentEnv();
+
+		await page.goto(url);
+
+		for (const selector of ['#header', '.modal-backdrop.flyout', '.leaderboardblock', '#onetrust-banner-sdk']) {
+			await page.addStyleTag({
+				content: `${selector} { display: none !important; }`
+			});
+		}
+
+		await page.addStyleTag({
+			content: `body { padding-top: 0 !important; }`
+		});
+
+		/**
+		 * Test part:
+		 * 1. Take a screenshot of the specified section
+		 */
+		const locator = page.locator("${row.Selector || ''}");
+
+		await expect(locator).toHaveScreenshot(\`${row.File_name || 'test'}-${row.Description?.replace(/\s+/g, '-').toLowerCase() || 'case'}-\${currentEnv}.png\`);
+	});
+});

@@ -6,13 +6,19 @@ import os from 'os';
 import { execSync } from 'child_process';
 import * as p from '@clack/prompts';
 import { setTimeout } from 'timers/promises';
+import csv from 'csv-parser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export async function generate() {
+export async function generate(options: { input?: string } = {}) {
   console.clear();
   p.intro('🎯 snap-ui test file generator');
+  
+  // Handle CSV input if provided
+  if (options.input) {
+    return await generateFromCSV(options.input);
+  }
   
   const s = p.spinner();
   s.start('Loading test configuration...');
@@ -439,6 +445,134 @@ test.describe('${pageName} - Visual Regression', () => {
     
   } catch (error) {
     p.cancel('Generation failed. Please check your configuration.');
+    process.exit(1);
+  }
+}
+
+async function generateFromCSV(csvPath: string) {
+  const s = p.spinner();
+  s.start('Processing CSV file...');
+  
+  try {
+    const cwd = process.cwd();
+    const resolvedCsvPath = path.resolve(cwd, csvPath);
+    
+    if (!fs.existsSync(resolvedCsvPath)) {
+      p.cancel(`CSV file not found: ${resolvedCsvPath}`);
+      process.exit(1);
+    }
+    
+    // Read CSV data
+    const csvData: any[] = [];
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(resolvedCsvPath)
+        .pipe(csv())
+        .on('data', (row) => csvData.push(row))
+        .on('end', resolve)
+        .on('error', reject);
+    });
+    
+    s.stop('CSV data loaded');
+    
+    // Look for template file
+    const templatePath = path.join(cwd, 'data', 'ui-test.template.txt');
+    if (!fs.existsSync(templatePath)) {
+      p.cancel(`Template file not found: ${templatePath}`);
+      process.exit(1);
+    }
+    
+    const templateContent = fs.readFileSync(templatePath, 'utf8');
+    
+    // Ensure tests/ui directory exists
+    const testsDir = path.join(cwd, 'tests', 'ui');
+    if (!fs.existsSync(testsDir)) {
+      fs.mkdirSync(testsDir, { recursive: true });
+    }
+    
+    const filesToGenerate: { path: string; name: string; content: string }[] = [];
+    const existingFiles: string[] = [];
+    
+    // Generate test files from CSV data
+    for (const row of csvData) {
+      const fileName = `${row['File name'] || 'test'}.spec.ts`;
+      const filePath = path.join(testsDir, fileName);
+      
+      // Process template with row data
+      let content = templateContent;
+      
+      // Replace template variables
+      content = content.replace(/\$\{row\.File_name\?\.(\w+)\(\)\s*\|\|\s*'([^']*)'\}/g, (match, method, fallback) => {
+        const value = row['File name'] || fallback;
+        if (method === 'toUpperCase') {
+          return value.toUpperCase();
+        }
+        return value;
+      });
+      
+      content = content.replace(/\$\{row\.(\w+)\s*\|\|\s*'([^']*)'\}/g, (match, field, fallback) => {
+        const fieldName = field.replace('_', ' ');
+        return row[fieldName] || fallback;
+      });
+      
+      content = content.replace(/\$\{row\.(\w+)\?\.(\w+)\(\)\.(\w+)\(\)\s*\|\|\s*'([^']*)'\}/g, (match, field, method1, method2, fallback) => {
+        const fieldName = field.replace('_', ' ');
+        let value = row[fieldName] || fallback;
+        if (method1 === 'replace' && method2 === 'toLowerCase') {
+          value = value.replace(/\s+/g, '-').toLowerCase();
+        }
+        return value;
+      });
+      
+      if (fs.existsSync(filePath)) {
+        existingFiles.push(fileName);
+      }
+      
+      filesToGenerate.push({
+        path: filePath,
+        name: fileName,
+        content: content
+      });
+    }
+    
+    // Handle existing files
+    if (existingFiles.length > 0) {
+      const overwrite = await p.confirm({
+        message: `${existingFiles.length} test file(s) already exist. Overwrite?`,
+        initialValue: false
+      });
+      
+      if (p.isCancel(overwrite)) {
+        p.cancel('Generation cancelled');
+        process.exit(0);
+      }
+      
+      if (!overwrite) {
+        p.note('Skipping existing files. No changes made.', 'Files Preserved');
+        p.outro('Generation complete!');
+        return;
+      }
+    }
+    
+    // Generate files
+    const progress = p.spinner();
+    progress.start('Generating test files...');
+    
+    let generatedCount = 0;
+    for (const file of filesToGenerate) {
+      fs.writeFileSync(file.path, file.content);
+      generatedCount++;
+    }
+    
+    await setTimeout(1000);
+    progress.stop(`Generated ${generatedCount} test files`);
+    
+    const generatedFiles = filesToGenerate.map(f => `📄 ${f.name}`).join('\n');
+    p.note(generatedFiles, 'Generated Files');
+    
+    p.outro('Generation complete! 🎉\n\nNext steps:\n1. Run your Playwright tests\n2. Check the generated files in tests/ui/\n3. Update your Playwright config if needed');
+    
+  } catch (error) {
+    p.cancel(`Generation failed: ${error}`);
     process.exit(1);
   }
 }
